@@ -92,4 +92,82 @@ describe('backupService', () => {
     const restored = await readBackup(JSON.stringify(backup), 'password123')
     expect(restored).toEqual([])
   })
+
+  // --- untrusted-input hardening -----------------------------------------
+  // A backup file is attacker-controlled input. The KDF block in particular
+  // dictates how much work we perform, so it must be bounded on both sides.
+
+  it('rejects a backup requesting an absurd PBKDF2 iteration count', async () => {
+    const backup = await createBackup([makeAccount()], 'password123')
+    const tampered = {
+      ...backup,
+      kdf: { ...backup.kdf, iterations: 2_000_000_000 },
+    }
+    await expect(readBackup(JSON.stringify(tampered), 'password123')).rejects.toThrow(
+      /unsupported amount of key-derivation work/i,
+    )
+  })
+
+  it('rejects a backup requesting a near-zero iteration count', async () => {
+    const backup = await createBackup([makeAccount()], 'password123')
+    const tampered = { ...backup, kdf: { ...backup.kdf, iterations: 1 } }
+    await expect(readBackup(JSON.stringify(tampered), 'password123')).rejects.toThrow(
+      /unsupported amount of key-derivation work/i,
+    )
+  })
+
+  it('rejects a non-integer or non-numeric iteration count', async () => {
+    const backup = await createBackup([makeAccount()], 'password123')
+    for (const iterations of [1.5, 'many', null]) {
+      const tampered = { ...backup, kdf: { ...backup.kdf, iterations } }
+      await expect(readBackup(JSON.stringify(tampered), 'password123')).rejects.toThrow(
+        /unsupported amount of key-derivation work/i,
+      )
+    }
+  })
+
+  it('rejects an unknown KDF algorithm or hash', async () => {
+    const backup = await createBackup([makeAccount()], 'password123')
+    const badAlgorithm = { ...backup, kdf: { ...backup.kdf, algorithm: 'scrypt' } }
+    await expect(readBackup(JSON.stringify(badAlgorithm), 'password123')).rejects.toThrow(
+      /unsupported key-derivation method/i,
+    )
+    const badHash = { ...backup, kdf: { ...backup.kdf, hash: 'SHA-1' } }
+    await expect(readBackup(JSON.stringify(badHash), 'password123')).rejects.toThrow(
+      /unsupported key-derivation method/i,
+    )
+  })
+
+  it('rejects a backup with a missing salt', async () => {
+    const backup = await createBackup([makeAccount()], 'password123')
+    const tampered = { ...backup, kdf: { ...backup.kdf, saltB64: '' } }
+    await expect(readBackup(JSON.stringify(tampered), 'password123')).rejects.toThrow(
+      /key-derivation salt/i,
+    )
+  })
+
+  it('reports a malformed kdf block as a BackupError, not a raw TypeError', async () => {
+    // `null` is an object, so a naive typeof check used to let it through and
+    // blow up deep inside the KDF with an opaque error.
+    const backup = await createBackup([makeAccount()], 'password123')
+    const tampered = { ...backup, kdf: null }
+    await expect(readBackup(JSON.stringify(tampered), 'password123')).rejects.toThrow(BackupError)
+  })
+
+  it('reports a malformed payload blob as a BackupError', async () => {
+    const backup = await createBackup([makeAccount()], 'password123')
+    const tampered = { ...backup, payload: null }
+    await expect(readBackup(JSON.stringify(tampered), 'password123')).rejects.toThrow(BackupError)
+    const missingIv = { ...backup, payload: { ciphertextB64: 'AAAA' } }
+    await expect(readBackup(JSON.stringify(missingIv), 'password123')).rejects.toThrow(BackupError)
+  })
+
+  it('still restores a legitimate backup end-to-end after hardening', async () => {
+    const accounts = [makeAccount({ issuer: 'RoundTrip', accountName: 'bob' })]
+    const backup = await createBackup(accounts, 'password123')
+    const restored = await readBackup(JSON.stringify(backup), 'password123')
+    expect(restored).toHaveLength(1)
+    expect(restored[0].issuer).toBe('RoundTrip')
+    expect(restored[0].accountName).toBe('bob')
+  })
 })

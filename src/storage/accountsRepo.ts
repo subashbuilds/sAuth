@@ -23,7 +23,16 @@ export async function createAccount(
 ): Promise<AuthenticatorAccount> {
   const db = await getDb()
   const now = Date.now()
-  const existingCount = await db.count('accounts')
+  // Append after the highest existing order rather than using the row count:
+  // deleting an account lowers the count, which would hand a new account an
+  // order that collides with a surviving one and make the list sort
+  // unpredictably.
+  const ordered = await db.getAllFromIndex('accounts', 'by-order')
+  const highest = ordered.reduce(
+    (max, record) => (Number.isInteger(record.order) && record.order > max ? record.order : max),
+    -1,
+  )
+  const nextOrder = highest + 1
 
   const account: AuthenticatorAccount = {
     ...input,
@@ -31,7 +40,7 @@ export async function createAccount(
     favorite: input.favorite ?? false,
     createdAt: now,
     updatedAt: now,
-    order: existingCount,
+    order: nextOrder,
   }
 
   const blob = await encryptJson(key, account)
@@ -73,21 +82,34 @@ export async function reorderAccounts(
   orderedIds: string[],
 ): Promise<AuthenticatorAccount[]> {
   const byId = new Map(accounts.map((a) => [a.id, a]))
+  const now = Date.now()
+
+  const updatedAccounts = orderedIds
+    .map((id, index) => {
+      const account = byId.get(id)
+      if (!account) return null
+      return { ...account, order: index, updatedAt: now }
+    })
+    .filter((a): a is AuthenticatorAccount => a !== null)
+
+  // Encrypt everything *before* opening the transaction. An IndexedDB
+  // transaction auto-commits as soon as the microtask queue drains with no
+  // pending request, so awaiting Web Crypto inside it would close the
+  // transaction out from under us and the writes would be lost.
+  const records = await Promise.all(
+    updatedAccounts.map(async (updated) => ({
+      id: updated.id,
+      blob: await encryptJson(key, updated),
+      order: updated.order,
+      updatedAt: updated.updatedAt,
+    })),
+  )
+
   const db = await getDb()
   const tx = db.transaction('accounts', 'readwrite')
-
-  const updatedAccounts: AuthenticatorAccount[] = []
-  await Promise.all(
-    orderedIds.map(async (id, index) => {
-      const account = byId.get(id)
-      if (!account) return
-      const updated: AuthenticatorAccount = { ...account, order: index, updatedAt: Date.now() }
-      updatedAccounts.push(updated)
-      const blob = await encryptJson(key, updated)
-      await tx.store.put({ id: updated.id, blob, order: updated.order, updatedAt: updated.updatedAt })
-    }),
-  )
+  await Promise.all(records.map((record) => tx.store.put(record)))
   await tx.done
+
   return updatedAccounts.sort((a, b) => a.order - b.order)
 }
 
@@ -95,23 +117,35 @@ export async function replaceAllAccounts(
   key: CryptoKey,
   accounts: NewAccountInput[],
 ): Promise<void> {
-  const db = await getDb()
-  await db.clear('accounts')
   const now = Date.now()
-  const tx = db.transaction('accounts', 'readwrite')
-  await Promise.all(
-    accounts.map(async (input, index) => {
-      const account: AuthenticatorAccount = {
-        ...input,
-        id: generateId(),
-        favorite: input.favorite ?? false,
-        createdAt: now,
-        updatedAt: now,
-        order: index,
-      }
-      const blob = await encryptJson(key, account)
-      await tx.store.put({ id: account.id, blob, order: account.order, updatedAt: account.updatedAt })
-    }),
+
+  // Build and encrypt the replacement set first. Clearing the store before
+  // the new rows exist would leave the vault empty if encryption failed
+  // part-way through, which is unrecoverable data loss for an authenticator.
+  const newAccounts: AuthenticatorAccount[] = accounts.map((input, index) => ({
+    ...input,
+    id: generateId(),
+    favorite: input.favorite ?? false,
+    createdAt: now,
+    updatedAt: now,
+    order: index,
+  }))
+
+  const records = await Promise.all(
+    newAccounts.map(async (account) => ({
+      id: account.id,
+      blob: await encryptJson(key, account),
+      order: account.order,
+      updatedAt: account.updatedAt,
+    })),
   )
+
+  const db = await getDb()
+  const tx = db.transaction('accounts', 'readwrite')
+  // Clear and re-insert inside a single transaction so the swap is atomic:
+  // readers never observe a half-populated vault, and a failure can't leave
+  // the old accounts wiped.
+  await tx.store.clear()
+  await Promise.all(records.map((record) => tx.store.put(record)))
   await tx.done
 }

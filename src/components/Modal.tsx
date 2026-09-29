@@ -41,7 +41,7 @@ export function Modal({ title, onClose, children, footer }: ModalProps) {
         style={{
           width: '100%',
           maxWidth: 'var(--app-max-width)',
-          maxHeight: '88vh',
+          maxHeight: 'var(--modal-max-height)',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--color-bg-elevated)',
@@ -73,7 +73,17 @@ export function Modal({ title, onClose, children, footer }: ModalProps) {
             <X size={20} />
           </button>
         </div>
-        <div style={{ padding: 'var(--space-5)', overflowY: 'auto' }}>{children}</div>
+        <div
+          style={{
+            padding: 'var(--space-5)',
+            // The sheet sits flush against the bottom of the screen, so it has
+            // to pad itself clear of the home indicator / system bar.
+            paddingBottom: 'calc(var(--space-5) + var(--safe-bottom))',
+            overflowY: 'auto',
+          }}
+        >
+          {children}
+        </div>
         {footer ? (
           <div
             style={{

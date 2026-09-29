@@ -22,6 +22,7 @@ export function AccountRow({ account, onToggleFavorite, onEdit, onDelete, onShow
   const [copied, setCopied] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const copyClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!menuOpen) return
@@ -41,7 +42,26 @@ export function AccountRow({ account, onToggleFavorite, onEdit, onDelete, onShow
     } catch {
       // Clipboard API can fail without a secure context/permission; the
       // code is still visible on screen for manual copying.
+      return
     }
+
+    // A TOTP code is a live credential. Leaving it on the clipboard for the
+    // rest of the session means anything that reads the clipboard later — a
+    // password manager, another app, a shared device — can still read it, so
+    // clear it shortly after the user has had time to paste it. Failures
+    // (denied permission) are ignored: the user may still want it there.
+    clearTimeout(copyClearTimer.current ?? undefined)
+    copyClearTimer.current = setTimeout(() => {
+      void navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (text === code) return navigator.clipboard.writeText('')
+        })
+        .catch(() => {
+          // Reading the clipboard needs an extra permission grant we do not
+          // ask for; clearing is best-effort by design.
+        })
+    }, 30_000)
   }
 
   return (

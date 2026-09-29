@@ -23,7 +23,7 @@ export function GateLayout({ tagline, children, onOpenDocs }: GateLayoutProps) {
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        padding: 'var(--space-6) var(--space-5) var(--space-5)',
+        padding: 'var(--space-6) var(--space-5) calc(var(--space-5) + var(--safe-bottom))',
         gap: 'var(--space-6)',
         overflowY: 'auto',
       }}

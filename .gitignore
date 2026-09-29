@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# This project is installed with npm (package-lock.json is the committed
+# lockfile). A stray `bun install` writes bun.lock, which is written in a
+# newer format than the CI's Bun can read and makes the build platform
+# switch installers to Bun and fail. Ignore it so it can't be committed.
+bun.lock
+bun.lockb
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

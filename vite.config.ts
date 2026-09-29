@@ -8,7 +8,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' rather than 'autoUpdate': the app's service worker module
+      // deliberately asks before reloading (see src/app/serviceWorker.ts), but
+      // 'autoUpdate' bypasses that and swaps the page out on its own — which
+      // can yank a half-typed passphrase or a decrypted form away mid-entry.
+      registerType: 'prompt',
       includeAssets: ['logo.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'sAuth Authenticator',

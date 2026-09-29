@@ -98,7 +98,14 @@ export function AccountListScreen({ onOpenSettings }: AccountListScreenProps) {
         </div>
       ) : null}
 
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          // Keep the last row clear of the floating add button.
+          paddingBottom: accounts.length > 0 ? 'calc(80px + var(--safe-bottom))' : undefined,
+        }}
+      >
         {accounts.length === 0 ? (
           <EmptyState onAdd={() => setAddOpen(true)} />
         ) : filtered.length === 0 ? (
@@ -127,7 +134,7 @@ export function AccountListScreen({ onOpenSettings }: AccountListScreenProps) {
           style={{
             position: 'absolute',
             right: 'var(--space-5)',
-            bottom: 'var(--space-5)',
+            bottom: 'calc(var(--space-5) + var(--safe-bottom))',
             width: 56,
             height: 56,
             borderRadius: 'var(--radius-full)',

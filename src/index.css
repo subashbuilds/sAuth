@@ -36,7 +36,7 @@ body {
 }
 
 #root {
-  min-height: 100vh;
+  min-height: var(--viewport-height);
   display: flex;
   justify-content: center;
 }
@@ -90,10 +90,39 @@ a {
   border: 0;
 }
 
+/* Bottom inset for notches, the home indicator and mobile system UI. The
+   app opts into `viewport-fit=cover`, so without this, content pinned to the
+   bottom of the shell can sit underneath that system UI. */
+:root {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Viewport-height helpers. `100vh` on mobile browsers measures the largest
+     viewport (i.e. with the URL bar hidden), which makes a full-height
+     element taller than the screen and pushes bottom-pinned content — the
+     gate footer, the add button — below the fold. `dvh` tracks the real
+     visible viewport, so use it wherever it's supported and fall back to
+     `vh` otherwise. These live here rather than being repeated inline so the
+     same fallback can also be consumed from React inline styles, where a
+     duplicate object key would not be valid TypeScript. */
+  --viewport-height: 100vh;
+  --viewport-height-short: 92vh;
+  --viewport-margin: 4vh;
+  --modal-max-height: 88vh;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --viewport-height: 100dvh;
+    --viewport-height-short: 92dvh;
+    --viewport-margin: 4dvh;
+    --modal-max-height: 88dvh;
+  }
+}
+
 .app-shell {
   width: 100%;
   max-width: var(--app-max-width);
-  min-height: 100vh;
+  min-height: var(--viewport-height);
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -102,8 +131,8 @@ a {
 
 @media (min-width: 560px) {
   .app-shell {
-    min-height: 92vh;
-    margin-block: 4vh;
+    min-height: var(--viewport-height-short);
+    margin-block: var(--viewport-margin);
     border-radius: var(--radius-lg);
     border: 1px solid var(--color-border);
     box-shadow: 0 40px 80px -32px rgba(0, 0, 0, 0.6);
